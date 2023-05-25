@@ -1,0 +1,63 @@
+"""
+Embedded Python Blocks:
+
+Each time this file is saved, GRC will instantiate the first class it finds
+to get ports and parameters of your block. The arguments to __init__  will
+be the parameters. All of them are required to have default values!
+"""
+
+import numpy as np
+from gnuradio import gr
+import pmt
+
+
+class blk(gr.sync_block):  # other base classes are basic_block, decim_block, interp_block
+
+    def __init__(self, threshold=20, samp_rate = 32000, step_window=1600, msg_window=1280):  # only default arguments here
+        """arguments to this function show up as parameters in GRC"""
+        gr.sync_block.__init__(
+            self,
+            name='Energy detection Block',   # will show up in GRC
+            in_sig=[np.float32],
+            out_sig=[np.float32,np.float32]
+        )
+        # if an attribute with the same name as a parameter is found,
+        # a callback is registered (properties work, too).
+        self.threshold = threshold
+        self.samp_rate = samp_rate
+        self.step_window = step_window
+        self.msg_window = msg_window
+        self.timer = 0
+        self.readyForTag = True
+        self.readyForMSG = False
+
+    def work(self, input_items, output_items):
+    	for index in range(len(input_items[0])):
+    		if (input_items[0][index] <= self.threshold and self.readyForTag == True):
+    			key = pmt.intern('detect')
+    			value = pmt.from_float(np.round(float(input_items[0][index]),2))
+    			writeIndex = self.nitems_written(0) + index
+    			self.add_item_tag(0, writeIndex, key, value )
+    			self.readyForTag = False
+    			self.readyForMSG = True
+    			
+    		# increase the timer by 1
+    		if (self.readyForTag == False):
+    			self.timer = self.timer + 1
+    		if (self.readyForMSG == True):
+    			output_items[1][index] = 1
+    		else:
+    			output_items[1][index] = 0.0001
+    			
+    		# set flag to write
+    		if (self.timer >= (self.step_window*self.samp_rate/1000)):
+    			# reset timer
+    			self.timer = 0
+    			# reset state once timer hits max value
+    			self.readyForTag = True
+    		if (self.timer >= (self.msg_window*self.samp_rate/1000)):
+    			# reset state once timer hits max value
+    			self.readyForMSG = False
+    		
+    	output_items[0][:] = input_items[0]
+    	return len(output_items[0])
